@@ -1,12 +1,9 @@
 --[[
-    北极生存7天 - 自动收集物资 v2.2
-    Auger挖雪(走到挖掘点) + ByteNet砍树 + 拖动回家
-    每个功能单独循环，不抢工具
-    改进工具检测：打印所有已找到的工具名
-    修复：先弹Popup确认后才创建窗口
+    北极生存7天 - 自动收集物资 v2.3
+    挖雪(Shovel+走到DigPoint+ByteNet) | 砍树(Axe+ByteNet) | 拖动回家
 --]]
 
-print("[北极] v2.2 加载中...")
+print("[北极] v2.3 加载中...")
 
 local P = game:GetService("Players")
 local WS = game:GetService("Workspace")
@@ -19,14 +16,12 @@ local LP = P.LocalPlayer
 if not LP then return end
 print("[北极] 玩家: " .. LP.Name)
 
--- 清理旧Gui
 for _, g in ipairs(C:GetChildren()) do
     if g:IsA("ScreenGui") and (g.Name:find("Arctic") or g.Name == "WindUI") then
         pcall(function() g:Destroy() end)
     end
 end
 
--- 加载WindUI (三路)
 print("[北极] 加载WindUI...")
 local WI = nil
 local function tryLoad()
@@ -48,7 +43,6 @@ end
 WI = tryLoad()
 print("[北极] WindUI=" .. (WI and "OK" or "NIL"))
 
--- 远程事件
 local Rem = RS:FindFirstChild("Remotes")
 local RD = Rem and Rem:FindFirstChild("RequestDrag")
 local RL = Rem and Rem:FindFirstChild("ReleaseDrag")
@@ -56,7 +50,7 @@ local BNR = RS:FindFirstChild("ByteNetReliable")
 local BM = pcall(function() return buffer.create end)
 print("[北极] 事件: Drag=" .. (RD and "OK" or "NIL") .. " Release=" .. (RL and "OK" or "NIL") .. " ByteNet=" .. (BNR and "OK" or "NIL") .. " Buffer=" .. (BM and "OK" or "NIL"))
 
--- Cobalt buffers
+-- Cobalt buffers (挖雪 + 砍树)
 local sb = {39,108,84,138,63}
 local tb = {41,3,0,65,120,101,8,0,65,120,101,83,119,105,110,103,20,1,42,197,127,191,99,221,42,61,220,52,242,59,69,171,14,68,253,170,165,66,172,8,26,68}
 local function mkSB() local b=buffer.create(#sb); for i=1,#sb do buffer.writeu8(b,i-1,sb[i]) end; return b end
@@ -65,30 +59,6 @@ local function mkTB() local b=buffer.create(#tb); for i=1,#tb do buffer.writeu8(
 local homePos, WN, CT = nil, nil, {}
 local S = {Snow=false, Wood=false, Drag=false, HomeP=nil, Range=60}
 local KB = {Toggle="RightShift"}
-
--- 打印当前所有工具
-local function debugTools()
-    local all = {}
-    local c = LP.Character
-    if c then
-        for _, t in ipairs(c:GetChildren()) do
-            if t:IsA("Tool") then table.insert(all, "[角色]"..t.Name) end
-        end
-    end
-    local bp = LP:FindFirstChild("Backpack")
-    if bp then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") then table.insert(all, "[背包]"..t.Name) end
-        end
-    end
-    if #all > 0 then
-        print("[调试] 当前工具: " .. table.concat(all, ", "))
-    else
-        print("[调试] 无工具")
-    end
-end
-
-spawn(function() wait(3); debugTools() end)
 
 local function getTool(kw)
     for _, src in ipairs({LP.Character, LP:FindFirstChild("Backpack")}) do
@@ -115,12 +85,12 @@ end
 
 local function hrp() local c=LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
--- ===== 挖雪 =====
+-- ===== 挖雪 (装备Shovel, 走到DigPoint, 发ByteNet) =====
 local function digSnow()
     if not S.Snow or not BNR or not BM then return end
-    local auger = getTool({"auger","drill"})
-    if not auger then print("[雪] 无Auger"); debugTools(); return end
-    eq(auger)
+    local shovel = getTool({"shovel","spade"})
+    if not shovel then print("[雪] 无Shovel"); return end
+    eq(shovel)
     local things = WS:FindFirstChild("Things")
     local digPoint = things and things:FindFirstChild("DigPoint")
     local digHere = things and things:FindFirstChild("DigHere")
@@ -129,7 +99,7 @@ local function digSnow()
     if not tp then print("[雪] 无挖掘点"); return end
     local dist = (tp - h.Position).Magnitude
     if dist > S.Range then print(string.format("[雪] %.1fm > %dm", dist, S.Range)); return end
-    print(string.format("[雪] 距离%.1fm 走到挖掘点...", dist))
+    print(string.format("[雪] 装备Shovel 距离%.1fm 走到挖掘点...", dist))
     h.CFrame = CFrame.new(tp.X, tp.Y + 1, tp.Z)
     wait(0.5)
     local ok, err = pcall(function() BNR:FireServer(mkSB(), nil) end)
@@ -141,7 +111,7 @@ end
 local function cutTree()
     if not S.Wood or not BNR or not BM then return end
     local axe = getTool({"axe","hatchet"})
-    if not axe then print("[树] 无斧头"); debugTools(); return end
+    if not axe then print("[树] 无斧头"); return end
     eq(axe)
     local forest = WS:FindFirstChild("Forest")
     if not forest then print("[树] 无Forest"); return end
@@ -197,61 +167,45 @@ local function setHome()
     print("[家] "..string.format("%.1f,%.1f,%.1f",homePos.X,homePos.Y,homePos.Z))
 end
 
--- ===== 先弹 Popup =====
+-- ===== Popup =====
 local PP=false
 if WI then
-    WI:Popup({Title="北极生存 v2.2", Content="走到挖掘点挖雪 | ByteNet砍树 | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
+    WI:Popup({Title="北极生存 v2.3", Content="挖雪(Shovel+ByteNet) | 砍树(Axe) | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
 end
 while not PP do wait(0.1) end
 
--- ===== 点了加载才创建 UI =====
-print("[北极] 创建窗口...")
+-- ===== UI =====
 if WI then
-    WN = WI:CreateWindow({
-        Title="北极生存 v2.2", Author="b站英吉利超入_", Icon="solar:snowflake-bold",
-        Size=UDim2.fromOffset(750,520), ToggleKey=Enum.KeyCode.RightShift,
-        Folder="arctic-script", Acrylic=true, Resizable=false,
-        ScrollBarEnabled=true, HideSearchBar=true,
-        OnClose=function() S.Snow=false; S.Wood=false; S.Drag=false end
-    })
+    WN = WI:CreateWindow({Title="北极生存 v2.3", Author="b站英吉利超入_", Icon="solar:snowflake-bold",
+        Size=UDim2.fromOffset(750,520), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script",
+        Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true,
+        OnClose=function() S.Snow=false; S.Wood=false; S.Drag=false end})
     spawn(function() wait(0.8) pcall(function() if WN and WN.Parent then WN.Parent.ClipsDescendants=true end end) end)
 
     local t1=WN:Tab({Title="主控", Icon="solar:slider-vertical-bold"})
-    S.Snow = false; S.Wood = false; S.Drag = false
-    CT.Snow = t1:Toggle({Flag="SN", Title="挖雪 (走到挖掘点+Auger)", Value=false, Callback=function(v) S.Snow=v; print("[开关] 挖雪="..tostring(v)) end})
+    CT.Snow=t1:Toggle({Flag="SN", Title="挖雪(Shovel+ByteNet)", Value=false, Callback=function(v) S.Snow=v; print("[开关] 挖雪="..tostring(v)) end})
     t1:Space()
-    CT.Wood = t1:Toggle({Flag="WD", Title="砍树 (ByteNet+Axe)", Value=false, Callback=function(v) S.Wood=v; print("[开关] 砍树="..tostring(v)) end})
+    CT.Wood=t1:Toggle({Flag="WD", Title="砍树(Axe+ByteNet)", Value=false, Callback=function(v) S.Wood=v; print("[开关] 砍树="..tostring(v)) end})
     t1:Space()
-    CT.Drag = t1:Toggle({Flag="DR", Title="拖动回家 (RequestDrag)", Value=false, Callback=function(v) S.Drag=v; print("[开关] 拖动="..tostring(v)) end})
+    CT.Drag=t1:Toggle({Flag="DR", Title="拖动回家(RequestDrag)", Value=false, Callback=function(v) S.Drag=v; print("[开关] 拖动="..tostring(v)) end})
     t1:Divider()
-    t1:Button({Title="设置家点", Icon="solar:home-bold", Justify="Center",
-        Color=Color3.fromHex("#50C878"), Callback=setHome})
+    t1:Button({Title="设置家点", Icon="solar:home-bold", Justify="Center", Color=Color3.fromHex("#50C878"), Callback=setHome})
     t1:Space()
-    CT.Range = t1:Slider({Flag="RG", Title="收集范围", Step=5,
-        Value={Min=10, Max=150, Default=60}, Width=200, IsTextbox=true,
-        Callback=function(v) S.Range=v end})
-
+    CT.Range=t1:Slider({Flag="RG", Title="收集范围", Step=5, Value={Min=10,Max=150,Default=60}, Width=200, IsTextbox=true, Callback=function(v) S.Range=v end})
     local t2=WN:Tab({Title="快捷键", Icon="solar:settings-bold"})
     t2:Keybind({Flag="TK", Title="窗口开关", Value="RightShift", Callback=function(v) end})
-
     local t3=WN:Tab({Title="UI", Icon="solar:monitor-bold"})
-    if WI.ToggleAcrylic then
-        t3:Toggle({Flag="AC", Title="毛玻璃", Value=true, Callback=function(v) pcall(function() WI:ToggleAcrylic(v) end) end})
-    end
+    if WI.ToggleAcrylic then t3:Toggle({Flag="AC", Title="毛玻璃", Value=true, Callback=function(v) pcall(function() WI:ToggleAcrylic(v) end) end}) end
     local tns={"Dark","Light","Rose","Plant","Ocean","Sunset","Midnight","Forest","Lavender","Coral","Mint","Sky","Blood","Lemon","Cyber"}
-    if WI.SetTheme then
-        t3:Dropdown({Flag="TH", Title="主题", Values=tns, Value="Dark", Callback=function(v) pcall(function() WI:SetTheme(v) end) end})
-    end
-
+    if WI.SetTheme then t3:Dropdown({Flag="TH", Title="主题", Values=tns, Value="Dark", Callback=function(v) pcall(function() WI:SetTheme(v) end) end}) end
     local t4=WN:Tab({Title="信息", Icon="solar:chart-bold"})
-
     local t5=WN:Tab({Title="关于", Icon="solar:info-square-bold"})
-    t5:Paragraph({Title="北极生存 v2.2"}); t5:Divider()
+    t5:Paragraph({Title="北极生存 v2.3"}); t5:Divider()
     t5:Paragraph({Title="作者", Desc="b站英吉利超入_"})
-    t5:Paragraph({Title="说明", Desc="挖雪:走到DigPoint+Auger+ByteNet | 砍树:Axe+ByteNet+{Trunk} | 拖动:RequestDrag回家"})
+    t5:Paragraph({Title="说明", Desc="挖雪:Shovel+DigPoint+ByteNet | 砍树:Axe+ByteNet+{Trunk} | 拖动:RequestDrag回家"})
 end
 
-print("[北极] v2.2 开始运行")
+print("[北极] v2.3 开始运行")
 
 spawn(function()
     while true do
