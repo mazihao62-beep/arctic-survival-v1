@@ -38,11 +38,7 @@ local RequestDrag = Remotes and Remotes:FindFirstChild("RequestDrag")
 local ReleaseDrag = Remotes and Remotes:FindFirstChild("ReleaseDrag")
 
 local ByteNetReliable = RS:FindFirstChild("ByteNetReliable")
-if ByteNetReliable then
-    print("[北极] ByteNetReliable 已找到")
-else
-    warn("[北极] ByteNetReliable 未找到！挖雪将不可用")
-end
+if ByteNetReliable then print("[北极] ByteNetReliable OK") end
 
 local snowBytes = {39, 108, 84, 138, 63}
 local function makeSnowBuffer()
@@ -106,26 +102,17 @@ local function hrp()
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
-local function tpTo(pos, offset)
+local function getPos()
     local h = hrp()
-    if h and pos then h.CFrame = CFrame.new(pos.X + offset.X, pos.Y + offset.Y, pos.Z + offset.Z) end
-end
-
-local function tpHome()
-    if homePos and S.UseHome then
-        local h = hrp()
-        if h then
-            h.CFrame = CFrame.new(homePos.X, homePos.Y, homePos.Z)
-            wait(0.2)
-        end
-    end
+    return h and h.Position
 end
 
 local function gSnow()
     local snows = {}
+    local pos = getPos()
+    if not pos then return snows end
     local h = hrp()
     if not h then return snows end
-    local pos = h.Position
     local look = h.CFrame.LookVector
     local cutoff = math.cos(math.rad(S.SnowAngle))
     local things = WS:FindFirstChild("Things")
@@ -148,7 +135,7 @@ local function gSnow()
         end
     end
     for _, obj in ipairs(WS:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():find("snow") then
+        if obj:IsA("BasePart") and obj.Name:lower():find("snow", 1, true) then
             local d = (obj.Position - pos).Magnitude
             if d <= S.SnowRange then
                 local dir = (obj.Position - pos).Unit
@@ -164,12 +151,8 @@ local function gSnow()
 end
 
 local function cSnow()
-    if not S.AutoSnow or not ByteNetReliable then
-        if not ByteNetReliable then print("[挖雪] ByteNetReliable 为空跳过") end
-        return
-    end
+    if not S.AutoSnow or not ByteNetReliable then return end
     local snows = gSnow()
-    print("[挖雪] 检测到 " .. #snows .. " 个雪块")
     if #snows == 0 then return end
     local snow = snows[1]
     local h = hrp()
@@ -177,23 +160,21 @@ local function cSnow()
     local dir = (snow.P.Position - h.Position).Unit
     h.CFrame = CFrame.lookAt(h.Position, h.Position + dir)
     wait(0.1)
-    local ok, err = pcall(function()
+    local ok = pcall(function()
         ByteNetReliable:FireServer(makeSnowBuffer(), nil)
     end)
     if ok then
-        print("[挖雪] ✅ " .. snow.P.Name .. " @" .. string.format("%.1f", snow.D) .. "m")
-    else
-        print("[挖雪] ❌ " .. tostring(err))
+        print("[挖雪] " .. snow.P.Name)
     end
     wait(0.3)
 end
 
+-- 查找可拖动物品
 local function gDrag()
     local items = {}
     for _, obj in ipairs(CS:GetTagged("Draggable")) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
-            local h = hrp()
-            local pos = h and h.Position
+            local pos = getPos()
             local target = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)))
             if target and pos then
                 local d = (target.Position - pos).Magnitude
@@ -207,10 +188,10 @@ local function gDrag()
     return items
 end
 
+-- 查找树木
 local function gTrees()
     local trees = {}
-    local h = hrp()
-    local pos = h and h.Position
+    local pos = getPos()
     if not pos then return trees end
     local things = WS:FindFirstChild("Things")
     local f = things and things:FindFirstChild("Trees")
@@ -236,10 +217,29 @@ local function gTrees()
     return trees
 end
 
+-- 查找树木砍倒后掉落的圆木(Log)
+local function gLogs()
+    local logs = {}
+    local pos = getPos()
+    if not pos then return logs end
+    local objects = WS:FindFirstChild("Objects")
+    if objects then
+        for _, obj in ipairs(objects:GetChildren()) do
+            if obj.Name == "Log" then
+                local target = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)))
+                if target and (target.Position - pos).Magnitude <= S.Range + 10 then
+                    table.insert(logs, {M=obj, P=target, D=(target.Position - pos).Magnitude})
+                end
+            end
+        end
+    end
+    table.sort(logs, function(a, b) return a.D < b.D end)
+    return logs
+end
+
 local function gStones()
     local stones = {}
-    local h = hrp()
-    local pos = h and h.Position
+    local pos = getPos()
     if not pos then return stones end
     local things = WS:FindFirstChild("Things")
     local f = things and things:FindFirstChild("Rocks")
@@ -267,8 +267,7 @@ end
 
 local function gFood()
     local foods = {}
-    local h = hrp()
-    local pos = h and h.Position
+    local pos = getPos()
     if not pos then return foods end
     for _, obj in ipairs(CS:GetTagged("Edible")) do
         local target = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)))
@@ -280,40 +279,77 @@ local function gFood()
     return foods
 end
 
+local function dragItem(item)
+    if not item then return end
+    local h = hrp(); if not h then return end
+    h.CFrame = item.P.CFrame * CFrame.new(0, 0, 3); wait(0.3)
+    if RequestDrag then pcall(function() RequestDrag:FireServer(item.M) end); wait(0.2) end
+    if ReleaseDrag then pcall(function() ReleaseDrag:FireServer() end) end
+end
+
+-- 拾取木头(Log)
+local function pickLogs()
+    local logs = gLogs()
+    if #logs == 0 then return end
+    for _, log in ipairs(logs) do
+        dragItem(log)
+        wait(0.2)
+        if homePos then
+            local h = hrp()
+            if h then h.CFrame = CFrame.new(homePos) end
+            wait(0.2)
+        end
+    end
+end
+
 local function cDrag()
     if not S.CollectDrag or not RequestDrag or not ReleaseDrag then return end
     local items = gDrag(); if #items == 0 then return end
-    local item = items[1]
-    local h = hrp(); if not h then return end
-    local wasPos = h.Position
-    h.CFrame = item.P.CFrame * CFrame.new(0, 0, 3); wait(0.3)
-    pcall(function() RequestDrag:FireServer(item.M) end); wait(0.2)
-    pcall(function() ReleaseDrag:FireServer() end)
-    tpHome()
+    dragItem(items[1])
+    if homePos then
+        local h = hrp()
+        if h then h.CFrame = CFrame.new(homePos); wait(0.2) end
+    end
 end
 
 local function cWood()
     if not S.CollectWood then return end
     local trees = gTrees(); if #trees == 0 then return end
-    local tool = gT({"axe", "hatchet"}); if not tool then return end
+    local tool = gT({"axe", "hatchet"})
+    if not tool then return end
     eq(tool)
     local tree = trees[1]
     local h = hrp(); if not h then return end
-    h.CFrame = tree.P.CFrame * CFrame.new(0, 0, 5); wait(0.3)
-    if Net and Net.axeCut then Net.axeCut.send({part=tree.P, pos=tree.P.Position, normal=Vector3.new(0,0,1)}) end
-    tpHome()
+    h.CFrame = tree.P.CFrame * CFrame.new(0, 0, 5)
+    wait(0.3)
+    if Net and Net.axeCut then
+        Net.axeCut.send({part=tree.P, pos=tree.P.Position, normal=Vector3.new(0,0,1)})
+        wait(0.5)
+        pickLogs()
+    end
+    if homePos then
+        local h2 = hrp()
+        if h2 then h2.CFrame = CFrame.new(homePos); wait(0.2) end
+    end
 end
 
 local function cStone()
     if not S.CollectStone then return end
     local stones = gStones(); if #stones == 0 then return end
-    local tool = gT({"shovel", "pickaxe"}); if not tool then return end
+    local tool = gT({"shovel", "pickaxe"})
+    if not tool then return end
     eq(tool)
     local stone = stones[1]
     local h = hrp(); if not h then return end
-    h.CFrame = stone.P.CFrame * CFrame.new(0, 0, 4); wait(0.3)
-    if Net and Net.dig then Net.dig.send({tool=tool.Name, pos=stone.P.Position, dir=Vector3.new(0,-1,0)}) end
-    tpHome()
+    h.CFrame = stone.P.CFrame * CFrame.new(0, 0, 4)
+    wait(0.3)
+    if Net and Net.dig then
+        Net.dig.send({tool=tool.Name, pos=stone.P.Position, dir=Vector3.new(0,-1,0)})
+    end
+    if homePos then
+        local h2 = hrp()
+        if h2 then h2.CFrame = CFrame.new(homePos); wait(0.2) end
+    end
 end
 
 local function cFood()
@@ -323,9 +359,13 @@ local function cFood()
     local h = hrp(); if not h then return end
     h.CFrame = food.P.CFrame * CFrame.new(0, 0, 2); wait(0.2)
     if RequestDrag then pcall(function() RequestDrag:FireServer(food.M) end) end
-    tpHome()
+    if homePos then
+        local h2 = hrp()
+        if h2 then h2.CFrame = CFrame.new(homePos); wait(0.2) end
+    end
 end
 
+-- 粒子
 local function sP()
     if PR then return end
     if PC then pcall(function() local p=PC.Parent; if p then p:Destroy() end end) PC=nil end
@@ -359,18 +399,19 @@ tc = function(n)
 end
 
 local function setHomeBtn()
-    if not CT.HomeBtn then return end
     local h = hrp()
     if not h then
         WI:Notify({Title="错误", Content="找不到角色位置", Duration=2, Icon="solar:warning-bold"})
         return
     end
     homePos = h.Position
-    S.UseHome = true
-    CT.HomeBtn:SetTitle("🏠 家点已设(点击重设)")
+    if CT.HomeBtn then
+        CT.HomeBtn:SetTitle("🏠 家点已设(点击重设)")
+    end
     WI:Notify({Title="家点已设置", Content="物资将自动传送回来", Duration=3, Icon="solar:home-bold"})
 end
 
+-- UI
 local function mW()
     WN = WI:CreateWindow({Title="北极生存", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;S.AutoSnow=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
     spawn(function() wait(0.8) pcall(function() if WN and WN.Parent then WN.Parent.ClipsDescendants=true end end) end)
@@ -380,7 +421,7 @@ local function mW()
     t1:Divider()
     CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="自动挖雪(面前)", Value=false, Callback=function(v) S.AutoSnow=v end})
     t1:Space()
-    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(斧头)", Value=true, Callback=function(v) S.CollectWood=v end})
+    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(斧头+捡Log)", Value=true, Callback=function(v) S.CollectWood=v end})
     CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="石头(铲子)", Value=true, Callback=function(v) S.CollectStone=v end})
     CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="食物(浆果)", Value=false, Callback=function(v) S.CollectFood=v end})
     CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="可拖动物品", Value=true, Callback=function(v) S.CollectDrag=v end})
