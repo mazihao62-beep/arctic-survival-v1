@@ -1,6 +1,7 @@
 --[[
-    北极生存7天 - 自动收集物资 v1.3
+    北极生存7天 - 自动收集物资 v1.4
     WindUI 模板 + 可勾选资源类型 + 自动挖雪 + 家点传送
+    ByteNet 直连：挖雪 | 砍树
     全中文界面
     Github: https://github.com/mazihao62-beep/arctic-survival-v1
 --]]
@@ -30,21 +31,28 @@ local WI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus
 if not WI then print("[北极] WindUI 失败"); return end
 print("[北极] WindUI OK")
 
-local Net
-pcall(function() Net = require(RS.Shared.Net) end)
-
 local Remotes = RS:FindFirstChild("Remotes")
 local RequestDrag = Remotes and Remotes:FindFirstChild("RequestDrag")
 local ReleaseDrag = Remotes and Remotes:FindFirstChild("ReleaseDrag")
 
 local ByteNetReliable = RS:FindFirstChild("ByteNetReliable")
-if ByteNetReliable then print("[北极] ByteNetReliable OK") end
 
+-- Cobalt 提供：挖雪 5字节
 local snowBytes = {39, 108, 84, 138, 63}
 local function makeSnowBuffer()
     local b = buffer.create(#snowBytes)
     for i = 1, #snowBytes do
         buffer.writeu8(b, i - 1, snowBytes[i])
+    end
+    return b
+end
+
+-- Cobalt 提供：砍树 42字节 (Axe + AxeSwing)
+local treeBytes = {41, 3, 0, 65, 120, 101, 8, 0, 65, 120, 101, 83, 119, 105, 110, 103, 20, 1, 42, 197, 127, 191, 99, 221, 42, 61, 220, 52, 242, 59, 69, 171, 14, 68, 253, 170, 165, 66, 172, 8, 26, 68}
+local function makeTreeBuffer()
+    local b = buffer.create(#treeBytes)
+    for i = 1, #treeBytes do
+        buffer.writeu8(b, i - 1, treeBytes[i])
     end
     return b
 end
@@ -107,6 +115,7 @@ local function getPos()
     return h and h.Position
 end
 
+-- 挖雪：找面前 Snow
 local function gSnow()
     local snows = {}
     local pos = getPos()
@@ -160,64 +169,59 @@ local function cSnow()
     local dir = (snow.P.Position - h.Position).Unit
     h.CFrame = CFrame.lookAt(h.Position, h.Position + dir)
     wait(0.1)
-    local ok = pcall(function()
+    pcall(function()
         ByteNetReliable:FireServer(makeSnowBuffer(), nil)
     end)
-    if ok then
-        print("[挖雪] " .. snow.P.Name)
-    end
+    print("[挖雪] " .. snow.P.Name)
     wait(0.3)
 end
 
--- 查找可拖动物品
-local function gDrag()
-    local items = {}
-    for _, obj in ipairs(CS:GetTagged("Draggable")) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            local pos = getPos()
-            local target = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)))
-            if target and pos then
-                local d = (target.Position - pos).Magnitude
-                if d <= S.Range + 10 then
-                    table.insert(items, {M=obj, P=target, D=d})
-                end
-            end
-        end
-    end
-    table.sort(items, function(a, b) return a.D < b.D end)
-    return items
-end
-
--- 查找树木
+-- 找树：Forest > Things.Trees > 全图搜索
 local function gTrees()
     local trees = {}
     local pos = getPos()
     if not pos then return trees end
+    local seen = {}
+    local function addTree(m, p)
+        if m and p and not seen[m] then
+            local d = (p.Position - pos).Magnitude
+            if d <= S.Range + 10 then
+                seen[m] = true
+                table.insert(trees, {M=m, P=p, D=d})
+            end
+        end
+    end
+    -- workspace.Forest 是最准的树路径
+    local forest = WS:FindFirstChild("Forest")
+    if forest then
+        for _, child in ipairs(forest:GetChildren()) do
+            local trunk = child:IsA("Model") and child:FindFirstChild("Trunk")
+            if trunk then
+                addTree(child, trunk)
+            end
+        end
+    end
+    -- Things.Trees
     local things = WS:FindFirstChild("Things")
     local f = things and things:FindFirstChild("Trees")
     if f then
         for _, m in ipairs(f:GetChildren()) do
-            if m:IsA("Model") then
-                local bp = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
-                if bp and (bp.Position - pos).Magnitude <= S.Range + 10 then
-                    table.insert(trees, {M=m, P=bp, D=(bp.Position - pos).Magnitude})
-                end
-            end
+            local bp = m:IsA("Model") and (m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true))
+            if bp then addTree(m, bp) end
         end
     end
+    -- 全图搜索
     for _, obj in ipairs(WS:GetDescendants()) do
         if obj:IsA("Model") and (obj.Name:lower():find("tree") or obj.Name:lower():find("stump") or obj.Name:lower():find("log")) then
             local bp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
-            if bp and (bp.Position - pos).Magnitude <= S.Range + 10 then
-                table.insert(trees, {M=obj, P=bp, D=(bp.Position - pos).Magnitude})
-            end
+            if bp then addTree(obj, bp) end
         end
     end
     table.sort(trees, function(a, b) return a.D < b.D end)
     return trees
 end
 
--- 查找树木砍倒后掉落的圆木(Log)
+-- 找 Log
 local function gLogs()
     local logs = {}
     local pos = getPos()
@@ -253,14 +257,6 @@ local function gStones()
             end
         end
     end
-    for _, obj in ipairs(WS:GetDescendants()) do
-        if obj:IsA("Model") and (obj.Name:lower():find("rock") or obj.Name:lower():find("stone") or obj.Name:lower():find("ore")) then
-            local bp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
-            if bp and (bp.Position - pos).Magnitude <= S.Range + 10 then
-                table.insert(stones, {M=obj, P=bp, D=(bp.Position - pos).Magnitude})
-            end
-        end
-    end
     table.sort(stones, function(a, b) return a.D < b.D end)
     return stones
 end
@@ -287,43 +283,37 @@ local function dragItem(item)
     if ReleaseDrag then pcall(function() ReleaseDrag:FireServer() end) end
 end
 
--- 拾取木头(Log)
 local function pickLogs()
     local logs = gLogs()
-    if #logs == 0 then return end
     for _, log in ipairs(logs) do
-        dragItem(log)
-        wait(0.2)
+        dragItem(log); wait(0.2)
         if homePos then
             local h = hrp()
-            if h then h.CFrame = CFrame.new(homePos) end
-            wait(0.2)
+            if h then h.CFrame = CFrame.new(homePos); wait(0.2) end
         end
     end
 end
 
-local function cDrag()
-    if not S.CollectDrag or not RequestDrag or not ReleaseDrag then return end
-    local items = gDrag(); if #items == 0 then return end
-    dragItem(items[1])
-    if homePos then
-        local h = hrp()
-        if h then h.CFrame = CFrame.new(homePos); wait(0.2) end
-    end
-end
-
+-- 砍树：用你的 Cobalt ByteNet 代码
 local function cWood()
     if not S.CollectWood then return end
-    local trees = gTrees(); if #trees == 0 then return end
     local tool = gT({"axe", "hatchet"})
     if not tool then return end
     eq(tool)
+    local trees = gTrees()
+    if #trees == 0 then return end
     local tree = trees[1]
     local h = hrp(); if not h then return end
-    h.CFrame = tree.P.CFrame * CFrame.new(0, 0, 5)
+    -- 找到 Trunk Part（Cobalt 代码传的是 Trunk）
+    local trunk = tree.M:IsA("Model") and tree.M:FindFirstChild("Trunk")
+    if not trunk then trunk = tree.P end
+    h.CFrame = trunk.CFrame * CFrame.new(0, 0, 4)
     wait(0.3)
-    if Net and Net.axeCut then
-        Net.axeCut.send({part=tree.P, pos=tree.P.Position, normal=Vector3.new(0,0,1)})
+    if ByteNetReliable then
+        pcall(function()
+            ByteNetReliable:FireServer(makeTreeBuffer(), {trunk})
+        end)
+        print("[砍树] " .. tree.M.Name)
         wait(0.5)
         pickLogs()
     end
@@ -333,6 +323,7 @@ local function cWood()
     end
 end
 
+-- 挖石头：ByteNet dig
 local function cStone()
     if not S.CollectStone then return end
     local stones = gStones(); if #stones == 0 then return end
@@ -343,12 +334,43 @@ local function cStone()
     local h = hrp(); if not h then return end
     h.CFrame = stone.P.CFrame * CFrame.new(0, 0, 4)
     wait(0.3)
-    if Net and Net.dig then
-        Net.dig.send({tool=tool.Name, pos=stone.P.Position, dir=Vector3.new(0,-1,0)})
+    if ByteNetReliable then
+        -- 挖雪和挖石头的区别可能在于不同的 buffer
+        pcall(function()
+            ByteNetReliable:FireServer(makeSnowBuffer(), nil)
+        end)
     end
     if homePos then
         local h2 = hrp()
         if h2 then h2.CFrame = CFrame.new(homePos); wait(0.2) end
+    end
+end
+
+local function gDrag()
+    local items = {}
+    for _, obj in ipairs(CS:GetTagged("Draggable")) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local pos = getPos()
+            local target = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)))
+            if target and pos then
+                local d = (target.Position - pos).Magnitude
+                if d <= S.Range + 10 then
+                    table.insert(items, {M=obj, P=target, D=d})
+                end
+            end
+        end
+    end
+    table.sort(items, function(a, b) return a.D < b.D end)
+    return items
+end
+
+local function cDrag()
+    if not S.CollectDrag or not RequestDrag or not ReleaseDrag then return end
+    local items = gDrag(); if #items == 0 then return end
+    dragItem(items[1])
+    if homePos then
+        local h = hrp()
+        if h then h.CFrame = CFrame.new(homePos); wait(0.2) end
     end
 end
 
@@ -400,18 +422,12 @@ end
 
 local function setHomeBtn()
     local h = hrp()
-    if not h then
-        WI:Notify({Title="错误", Content="找不到角色位置", Duration=2, Icon="solar:warning-bold"})
-        return
-    end
+    if not h then WI:Notify({Title="错误", Content="找不到角色位置", Duration=2, Icon="solar:warning-bold"}); return end
     homePos = h.Position
-    if CT.HomeBtn then
-        CT.HomeBtn:SetTitle("🏠 家点已设(点击重设)")
-    end
+    if CT.HomeBtn then CT.HomeBtn:SetTitle("🏠 家点已设(点击重设)") end
     WI:Notify({Title="家点已设置", Content="物资将自动传送回来", Duration=3, Icon="solar:home-bold"})
 end
 
--- UI
 local function mW()
     WN = WI:CreateWindow({Title="北极生存", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;S.AutoSnow=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
     spawn(function() wait(0.8) pcall(function() if WN and WN.Parent then WN.Parent.ClipsDescendants=true end end) end)
@@ -421,7 +437,7 @@ local function mW()
     t1:Divider()
     CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="自动挖雪(面前)", Value=false, Callback=function(v) S.AutoSnow=v end})
     t1:Space()
-    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(斧头+捡Log)", Value=true, Callback=function(v) S.CollectWood=v end})
+    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(ByteNet砍树)", Value=true, Callback=function(v) S.CollectWood=v end})
     CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="石头(铲子)", Value=true, Callback=function(v) S.CollectStone=v end})
     CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="食物(浆果)", Value=false, Callback=function(v) S.CollectFood=v end})
     CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="可拖动物品", Value=true, Callback=function(v) S.CollectDrag=v end})
@@ -461,15 +477,15 @@ local function mW()
     end)
 
     local t6=WN:Tab({Title="关于", Icon="solar:info-square-bold"})
-    t6:Paragraph({Title="北极生存 v1.3"}); t6:Divider()
+    t6:Paragraph({Title="北极生存 v1.4"}); t6:Divider()
     t6:Paragraph({Title="作者", Desc="b站英吉利超入_"})
-    t6:Paragraph({Title="说明", Desc="自动收集物资 + 自动挖雪 + 家点传送"})
+    t6:Paragraph({Title="说明", Desc="ByteNet 挖雪+砍树 | 家点传送 | 自动收集"})
     return sWood, sStone, sFood, sDrag
 end
 
 pcall(function() WI:SetTheme("Dark") end); S.ParticleColor=tc("Dark")
 local PP=false
-WI:Popup({Title="北极生存 v1.3", Content="自动收集物资 + 自动挖雪 + 家点传送。木头/石头/食物/可拖动物品。", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"}, {Title="取消", Callback=function() return end}}})
+WI:Popup({Title="北极生存 v1.4", Content="ByteNet直连：挖雪+砍树。家点传送。Cobalt原版代码。", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"}, {Title="取消", Callback=function() return end}}})
 while not PP do wait(0.1) end
 
 spawn(function()
