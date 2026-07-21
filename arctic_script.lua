@@ -1,6 +1,6 @@
 --[[
-    北极生存7天 - 自动收集物资 v1.0
-    WindUI 模板 + 可勾选资源类型
+    北极生存7天 - 自动收集物资 v1.1
+    WindUI 模板 + 可勾选资源类型 + 自动挖雪
     Github: https://github.com/mazihao62-beep/arctic-survival-v1
 --]]
 
@@ -36,9 +36,24 @@ local Remotes = RS:FindFirstChild("Remotes")
 local RequestDrag = Remotes and Remotes:FindFirstChild("RequestDrag")
 local ReleaseDrag = Remotes and Remotes:FindFirstChild("ReleaseDrag")
 
+-- ByteNet 远程事件（挖雪用）
+local ByteNetReliable = RS:FindFirstChild("ByteNetReliable")
+
+-- 挖雪的二进制 buffer 载荷
+local snowBytes = {39, 108, 84, 138, 63}
+local function makeSnowBuffer()
+    local b = buffer.create(#snowBytes)
+    for i = 1, #snowBytes do
+        buffer.writeu8(b, i - 1, snowBytes[i])
+    end
+    return b
+end
+
 local S = {
     AutoCollect = false, CollectWood = true, CollectStone = true,
-    CollectFood = false, CollectDrag = true, Range = 50,
+    CollectFood = false, CollectDrag = true, AutoSnow = false,
+    SnowRange = 8, SnowAngle = 60,
+    Range = 50,
     Particles = true, Acrylic = true, Transparent = false,
     ParticleColor = Color3.fromRGB(80, 170, 255)
 }
@@ -82,6 +97,84 @@ local function eq(t)
     return true
 end
 
+-- 查找面前的雪块
+local function gSnow()
+    local snows = {}
+    local c = LP.Character
+    if not c then return snows end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return snows end
+    local pos = hrp.Position
+    local look = hrp.CFrame.LookVector
+    local cutoff = math.cos(math.rad(S.SnowAngle))
+
+    -- 搜 Things/Snow 文件夹
+    local things = WS:FindFirstChild("Things")
+    local snowFolder = things and things:FindFirstChild("Snow")
+    if snowFolder then
+        for _, m in ipairs(snowFolder:GetChildren()) do
+            if m:IsA("Model") then
+                local bp = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
+                if bp then
+                    local d = (bp.Position - pos).Magnitude
+                    if d <= S.SnowRange then
+                        local dir = (bp.Position - pos).Unit
+                        local dot = look:Dot(dir)
+                        if dot >= cutoff then
+                            table.insert(snows, {P=bp, D=d, Dot=dot})
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 搜名称含 snow 的 Part
+    for _, obj in ipairs(WS:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:lower():find("snow", 1, true) then
+            local d = (obj.Position - pos).Magnitude
+            if d <= S.SnowRange then
+                local dir = (obj.Position - pos).Unit
+                local dot = look:Dot(dir)
+                if dot >= cutoff then
+                    table.insert(snows, {P=obj, D=d, Dot=dot})
+                end
+            end
+        end
+    end
+
+    table.sort(snows, function(a, b) return a.D < b.D end)
+    return snows
+end
+
+-- 挖雪（只挖面前最近的）
+local function cSnow()
+    if not S.AutoSnow or not ByteNetReliable then return end
+    local snows = gSnow()
+    if #snows == 0 then return end
+
+    local snow = snows[1]
+    local c = LP.Character
+    if not c then return end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- 转向雪块方向
+    local dir = (snow.P.Position - hrp.Position).Unit
+    hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir)
+    wait(0.1)
+
+    -- 发送 ByteNet 挖雪事件
+    local ok, err = pcall(function()
+        ByteNetReliable:FireServer(makeSnowBuffer(), nil)
+    end)
+    if ok then
+        print(string.format("[挖雪] %s @%.1fm", snow.P.Name, snow.D))
+        wait(0.5)
+    end
+end
+
+-- 其他收集功能
 local function gDrag()
     local items = {}
     for _, obj in ipairs(CS:GetTagged("Draggable")) do
@@ -180,8 +273,7 @@ end
 
 local function cDrag()
     if not S.CollectDrag or not RequestDrag or not ReleaseDrag then return end
-    local items = gDrag()
-    if #items == 0 then return end
+    local items = gDrag(); if #items == 0 then return end
     local item = items[1]
     local c = LP.Character; if not c then return end
     local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
@@ -224,6 +316,7 @@ local function cFood()
     if RequestDrag then pcall(function() RequestDrag:FireServer(food.M) end) end
 end
 
+-- 粒子
 local function sP()
     if PR then return end
     if PC then pcall(function() local p=PC.Parent; if p then p:Destroy() end end) PC=nil end
@@ -256,13 +349,16 @@ tc = function(n)
     return t[n] or Color3.fromRGB(80,170,255)
 end
 
+-- UI
 local function mW()
-    WN = WI:CreateWindow({Title="Arctic Survival", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
+    WN = WI:CreateWindow({Title="Arctic Survival", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;S.AutoSnow=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
     spawn(function() wait(0.8) pcall(function() if WN and WN.Parent then WN.Parent.ClipsDescendants=true end end) end)
 
     local t1=WN:Tab({Title="Main", Icon="solar:slider-vertical-bold"})
     CT.AutoCollect=t1:Toggle({Flag="AutoCollect", Title="Auto Collect", Value=false, Callback=function(v) S.AutoCollect=v end})
     t1:Divider()
+    CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="Dig Snow (front)", Value=false, Callback=function(v) S.AutoSnow=v end})
+    t1:Space()
     CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="Wood (Axe)", Value=true, Callback=function(v) S.CollectWood=v end})
     CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="Stone (Shovel)", Value=true, Callback=function(v) S.CollectStone=v end})
     CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="Food (Berries)", Value=false, Callback=function(v) S.CollectFood=v end})
@@ -301,31 +397,32 @@ local function mW()
     end)
 
     local t6=WN:Tab({Title="About", Icon="solar:info-square-bold"})
-    t6:Paragraph({Title="Arctic Survival v1.0"}); t6:Divider()
+    t6:Paragraph({Title="Arctic Survival v1.1"}); t6:Divider()
     t6:Paragraph({Title="Author", Desc="b站英吉利超入_"})
-    t6:Paragraph({Title="Desc", Desc="Auto collect resources in Survive 7 Days in Arctic"})
+    t6:Paragraph({Title="Desc", Desc="Auto collect resources + dig snow"})
     return sWood, sStone, sFood, sDrag
 end
 
 pcall(function() WI:SetTheme("Dark") end); S.ParticleColor=tc("Dark")
 local PP=false
-WI:Popup({Title="Arctic Survival v1.0", Content="Auto collect resources", Buttons={{Title="Load", Callback=function() PP=true end, Variant="Primary"}, {Title="Cancel", Callback=function() return end}}})
+WI:Popup({Title="Arctic Survival v1.1", Content="Auto collect resources + dig snow", Buttons={{Title="Load", Callback=function() PP=true end, Variant="Primary"}, {Title="Cancel", Callback=function() return end}}})
 while not PP do wait(0.1) end
 
 spawn(function()
     local sWood, sStone, sFood, sDrag = mW()
     print("[北极] OK")
-    local last=0
+    local start=os.clock()
     while true do
+        if S.AutoSnow then pcall(function() cSnow() end) wait(0.2) end
         if S.AutoCollect then
             pcall(function() cWood() end) wait(0.5)
             pcall(function() cStone() end) wait(0.5)
             pcall(function() cFood() end) wait(0.5)
             pcall(function() cDrag() end) wait(0.5)
         end
-        wait(0.5)
-        local now=tick()
-        if now-last>3 then last=now
+        wait(0.3)
+        local now=os.clock()
+        if now-start>3 then start=now
             if sWood then pcall(function() sWood:SetTitle("Trees: "..#gTrees()) end) end
             if sStone then pcall(function() sStone:SetTitle("Rocks: "..#gStones()) end) end
             if sFood then pcall(function() sFood:SetTitle("Food: "..#gFood()) end) end
