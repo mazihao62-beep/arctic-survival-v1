@@ -3,6 +3,7 @@
     Auger挖雪(走到挖掘点) + ByteNet砍树 + 拖动回家
     每个功能单独循环，不抢工具
     改进工具检测：打印所有已找到的工具名
+    修复：先弹Popup确认后才创建窗口
 --]]
 
 print("[北极] v2.2 加载中...")
@@ -65,7 +66,7 @@ local homePos, WN, CT = nil, nil, {}
 local S = {Snow=false, Wood=false, Drag=false, HomeP=nil, Range=60}
 local KB = {Toggle="RightShift"}
 
--- 打印当前所有工具（调试用）
+-- 打印当前所有工具
 local function debugTools()
     local all = {}
     local c = LP.Character
@@ -114,15 +115,11 @@ end
 
 local function hrp() local c=LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
--- ===== 挖雪 (走到挖掘点, 装备Auger, 发ByteNet) =====
+-- ===== 挖雪 =====
 local function digSnow()
     if not S.Snow or not BNR or not BM then return end
     local auger = getTool({"auger","drill"})
-    if not auger then
-        print("[雪] 无Auger - 检查背包中工具名是否有 'Auger' 或 'drill'")
-        debugTools()
-        return
-    end
+    if not auger then print("[雪] 无Auger"); debugTools(); return end
     eq(auger)
     local things = WS:FindFirstChild("Things")
     local digPoint = things and things:FindFirstChild("DigPoint")
@@ -140,15 +137,11 @@ local function digSnow()
     wait(1)
 end
 
--- ===== 砍树 (装备Axe, 走到Trunk, 发ByteNet) =====
+-- ===== 砍树 =====
 local function cutTree()
     if not S.Wood or not BNR or not BM then return end
     local axe = getTool({"axe","hatchet"})
-    if not axe then
-        print("[树] 无斧头 - 检查背包中工具名是否有 'Axe' 或 'hatchet'")
-        debugTools()
-        return
-    end
+    if not axe then print("[树] 无斧头"); debugTools(); return end
     eq(axe)
     local forest = WS:FindFirstChild("Forest")
     if not forest then print("[树] 无Forest"); return end
@@ -204,7 +197,15 @@ local function setHome()
     print("[家] "..string.format("%.1f,%.1f,%.1f",homePos.X,homePos.Y,homePos.Z))
 end
 
--- ===== UI =====
+-- ===== 先弹 Popup =====
+local PP=false
+if WI then
+    WI:Popup({Title="北极生存 v2.2", Content="走到挖掘点挖雪 | ByteNet砍树 | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
+end
+while not PP do wait(0.1) end
+
+-- ===== 点了加载才创建 UI =====
+print("[北极] 创建窗口...")
 if WI then
     WN = WI:CreateWindow({
         Title="北极生存 v2.2", Author="b站英吉利超入_", Icon="solar:snowflake-bold",
@@ -248,12 +249,6 @@ if WI then
     t5:Paragraph({Title="北极生存 v2.2"}); t5:Divider()
     t5:Paragraph({Title="作者", Desc="b站英吉利超入_"})
     t5:Paragraph({Title="说明", Desc="挖雪:走到DigPoint+Auger+ByteNet | 砍树:Axe+ByteNet+{Trunk} | 拖动:RequestDrag回家"})
-
-    local PP=false
-    WI:Popup({Title="北极生存 v2.2", Content="走到挖掘点挖雪 | ByteNet砍树 | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
-    while not PP do wait(0.1) end
-else
-    print("[北极] 无WindUI, 仅打印模式")
 end
 
 print("[北极] v2.2 开始运行")
