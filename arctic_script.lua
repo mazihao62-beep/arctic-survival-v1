@@ -1,6 +1,7 @@
 --[[
-    北极生存7天 - 自动收集物资 v1.1
+    北极生存7天 - 自动收集物资 v1.2
     WindUI 模板 + 可勾选资源类型 + 自动挖雪
+    全中文界面
     Github: https://github.com/mazihao62-beep/arctic-survival-v1
 --]]
 
@@ -36,10 +37,8 @@ local Remotes = RS:FindFirstChild("Remotes")
 local RequestDrag = Remotes and Remotes:FindFirstChild("RequestDrag")
 local ReleaseDrag = Remotes and Remotes:FindFirstChild("ReleaseDrag")
 
--- ByteNet 远程事件（挖雪用）
 local ByteNetReliable = RS:FindFirstChild("ByteNetReliable")
 
--- 挖雪的二进制 buffer 载荷
 local snowBytes = {39, 108, 84, 138, 63}
 local function makeSnowBuffer()
     local b = buffer.create(#snowBytes)
@@ -52,8 +51,7 @@ end
 local S = {
     AutoCollect = false, CollectWood = true, CollectStone = true,
     CollectFood = false, CollectDrag = true, AutoSnow = false,
-    SnowRange = 8, SnowAngle = 60,
-    Range = 50,
+    SnowRange = 8, SnowAngle = 60, Range = 50,
     Particles = true, Acrylic = true, Transparent = false,
     ParticleColor = Color3.fromRGB(80, 170, 255)
 }
@@ -97,7 +95,6 @@ local function eq(t)
     return true
 end
 
--- 查找面前的雪块
 local function gSnow()
     local snows = {}
     local c = LP.Character
@@ -107,8 +104,6 @@ local function gSnow()
     local pos = hrp.Position
     local look = hrp.CFrame.LookVector
     local cutoff = math.cos(math.rad(S.SnowAngle))
-
-    -- 搜 Things/Snow 文件夹
     local things = WS:FindFirstChild("Things")
     local snowFolder = things and things:FindFirstChild("Snow")
     if snowFolder then
@@ -128,8 +123,6 @@ local function gSnow()
             end
         end
     end
-
-    -- 搜名称含 snow 的 Part
     for _, obj in ipairs(WS:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():find("snow", 1, true) then
             local d = (obj.Position - pos).Magnitude
@@ -142,29 +135,22 @@ local function gSnow()
             end
         end
     end
-
     table.sort(snows, function(a, b) return a.D < b.D end)
     return snows
 end
 
--- 挖雪（只挖面前最近的）
 local function cSnow()
     if not S.AutoSnow or not ByteNetReliable then return end
     local snows = gSnow()
     if #snows == 0 then return end
-
     local snow = snows[1]
     local c = LP.Character
     if not c then return end
     local hrp = c:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-
-    -- 转向雪块方向
     local dir = (snow.P.Position - hrp.Position).Unit
     hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir)
     wait(0.1)
-
-    -- 发送 ByteNet 挖雪事件
     local ok, err = pcall(function()
         ByteNetReliable:FireServer(makeSnowBuffer(), nil)
     end)
@@ -174,7 +160,6 @@ local function cSnow()
     end
 end
 
--- 其他收集功能
 local function gDrag()
     local items = {}
     for _, obj in ipairs(CS:GetTagged("Draggable")) do
@@ -316,7 +301,6 @@ local function cFood()
     if RequestDrag then pcall(function() RequestDrag:FireServer(food.M) end) end
 end
 
--- 粒子
 local function sP()
     if PR then return end
     if PC then pcall(function() local p=PC.Parent; if p then p:Destroy() end end) PC=nil end
@@ -349,63 +333,62 @@ tc = function(n)
     return t[n] or Color3.fromRGB(80,170,255)
 end
 
--- UI
 local function mW()
-    WN = WI:CreateWindow({Title="Arctic Survival", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;S.AutoSnow=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
+    WN = WI:CreateWindow({Title="北极生存", Author="b站英吉利超入_", Icon="solar:snowflake-bold", Size=UDim2.fromOffset(750,560), ToggleKey=Enum.KeyCode.RightShift, Folder="arctic-script", Acrylic=true, Resizable=false, ScrollBarEnabled=true, HideSearchBar=true, OnClose=function() xP();S.AutoCollect=false;S.AutoSnow=false;for _,ct in pairs(CT) do if ct and type(ct.Set)=="function" then pcall(function() ct:Set(false) end) end end end, OnOpen=function() if S.Particles then sP() end end})
     spawn(function() wait(0.8) pcall(function() if WN and WN.Parent then WN.Parent.ClipsDescendants=true end end) end)
 
-    local t1=WN:Tab({Title="Main", Icon="solar:slider-vertical-bold"})
-    CT.AutoCollect=t1:Toggle({Flag="AutoCollect", Title="Auto Collect", Value=false, Callback=function(v) S.AutoCollect=v end})
+    local t1=WN:Tab({Title="主控面板", Icon="solar:slider-vertical-bold"})
+    CT.AutoCollect=t1:Toggle({Flag="AutoCollect", Title="自动收集", Value=false, Callback=function(v) S.AutoCollect=v end})
     t1:Divider()
-    CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="Dig Snow (front)", Value=false, Callback=function(v) S.AutoSnow=v end})
+    CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="自动挖雪(面前)", Value=false, Callback=function(v) S.AutoSnow=v end})
     t1:Space()
-    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="Wood (Axe)", Value=true, Callback=function(v) S.CollectWood=v end})
-    CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="Stone (Shovel)", Value=true, Callback=function(v) S.CollectStone=v end})
-    CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="Food (Berries)", Value=false, Callback=function(v) S.CollectFood=v end})
-    CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="Draggable", Value=true, Callback=function(v) S.CollectDrag=v end})
+    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(斧头)", Value=true, Callback=function(v) S.CollectWood=v end})
+    CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="石头(铲子)", Value=true, Callback=function(v) S.CollectStone=v end})
+    CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="食物(浆果)", Value=false, Callback=function(v) S.CollectFood=v end})
+    CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="可拖动物品", Value=true, Callback=function(v) S.CollectDrag=v end})
     t1:Divider()
-    CT.Range=t1:Slider({Flag="Range", Title="Range", Step=5, Value={Min=10,Max=150,Default=50}, Width=200, IsTextbox=true, Callback=function(v) S.Range=v end})
+    CT.Range=t1:Slider({Flag="Range", Title="收集范围", Step=5, Value={Min=10,Max=150,Default=50}, Width=200, IsTextbox=true, Callback=function(v) S.Range=v end})
 
-    local t2=WN:Tab({Title="Keys", Icon="solar:settings-bold"})
-    t2:Keybind({Flag="ToggleKey", Title="Toggle Key", Value="RightShift", Callback=function(v) KB.Toggle=v end})
+    local t2=WN:Tab({Title="快捷键", Icon="solar:settings-bold"})
+    t2:Keybind({Flag="ToggleKey", Title="窗口开关", Value="RightShift", Callback=function(v) KB.Toggle=v end})
 
-    local t3=WN:Tab({Title="UI", Icon="solar:monitor-bold"})
-    CT.Particles=t3:Toggle({Flag="Particles", Title="Particles", Value=true, Callback=function(v) S.Particles=v; if v then sP() else xP() end end})
-    t3:Toggle({Flag="Acrylic", Title="Blur", Value=true, Callback=function(v) S.Acrylic=v; pcall(function() WI:ToggleAcrylic(v) end) end})
-    t3:Toggle({Flag="Transparent", Title="Transparent", Value=false, Callback=function(v) S.Transparent=v; pcall(function() WN:ToggleTransparency(v) end) end})
+    local t3=WN:Tab({Title="UI设置", Icon="solar:monitor-bold"})
+    CT.Particles=t3:Toggle({Flag="Particles", Title="粒子背景", Value=true, Callback=function(v) S.Particles=v; if v then sP() else xP() end end})
+    t3:Toggle({Flag="Acrylic", Title="毛玻璃", Value=true, Callback=function(v) S.Acrylic=v; pcall(function() WI:ToggleAcrylic(v) end) end})
+    t3:Toggle({Flag="Transparent", Title="透明", Value=false, Callback=function(v) S.Transparent=v; pcall(function() WN:ToggleTransparency(v) end) end})
     local tns={"Dark","Light","Rose","Plant","Ocean","Sunset","Midnight","Forest","Lavender","Coral","Mint","Sky","Blood","Lemon","Cyber"}
-    t3:Dropdown({Flag="Theme", Title="Theme", Values=tns, Value="Dark", Callback=function(v) pcall(function() WI:SetTheme(v) end); S.ParticleColor=tc(v) end})
+    t3:Dropdown({Flag="Theme", Title="主题", Values=tns, Value="Dark", Callback=function(v) pcall(function() WI:SetTheme(v) end); S.ParticleColor=tc(v) end})
 
-    local t4=WN:Tab({Title="Stats", Icon="solar:chart-bold"})
-    local sWood=t4:Paragraph({Title="Trees: 0"}); local sStone=t4:Paragraph({Title="Rocks: 0"})
-    local sFood=t4:Paragraph({Title="Food: 0"}); local sDrag=t4:Paragraph({Title="Draggable: 0"})
+    local t4=WN:Tab({Title="信息统计", Icon="solar:chart-bold"})
+    local sWood=t4:Paragraph({Title="树木: 0"}); local sStone=t4:Paragraph({Title="石头: 0"})
+    local sFood=t4:Paragraph({Title="食物: 0"}); local sDrag=t4:Paragraph({Title="拖动物品: 0"})
 
-    local t5=WN:Tab({Title="Config", Icon="solar:diskette-bold"})
+    local t5=WN:Tab({Title="配置管理", Icon="solar:diskette-bold"})
     pcall(function()
         local CM=WN.ConfigManager; if not CM then return end
-        local cni=t5:Input({Flag="CN", Title="Name", Value="default", Icon="solar:file-text-bold", Callback=function(v) end})
+        local cni=t5:Input({Flag="CN", Title="配置名称", Value="default", Icon="solar:file-text-bold", Callback=function(v) end})
         t5:Space(); local AC={}; pcall(function() AC=CM:AllConfigs() end)
         local DV=nil; for _,v in ipairs(AC) do if v=="default" then DV="default"; break end end
-        local ACD=t5:Dropdown({Title="Saved", Values=AC, Value=DV, Callback=function(v) if v then pcall(function() cni:Set(v) end) end end})
+        local ACD=t5:Dropdown({Title="已有配置", Values=AC, Value=DV, Callback=function(v) if v then pcall(function() cni:Set(v) end) end end})
         t5:Space()
-        t5:Button({Title="Save", Icon="solar:check-circle-bold", Justify="Center", Color=Color3.fromHex("#305dff"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Save() then WI:Notify({Title="Saved", Content="OK", Duration=3, Icon="solar:check-circle-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
+        t5:Button({Title="💾 保存", Icon="solar:check-circle-bold", Justify="Center", Color=Color3.fromHex("#305dff"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Save() then WI:Notify({Title="已保存", Content="OK", Duration=3, Icon="solar:check-circle-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
         t5:Space()
-        t5:Button({Title="Load", Icon="solar:refresh-circle-bold", Justify="Center", Color=Color3.fromHex("#10C550"), Callback=function() if not CM then return end; local c=CM:CreateConfig("default",false); if c and c:Load() then WI:Notify({Title="Loaded", Content="OK", Duration=3, Icon="solar:refresh-circle-bold"}) end end})
+        t5:Button({Title="📂 加载", Icon="solar:refresh-circle-bold", Justify="Center", Color=Color3.fromHex("#10C550"), Callback=function() if not CM then return end; local c=CM:CreateConfig("default",false); if c and c:Load() then WI:Notify({Title="已加载", Content="OK", Duration=3, Icon="solar:refresh-circle-bold"}) end end})
         t5:Space()
-        t5:Button({Title="Delete", Icon="solar:trash-bin-trash-bold", Justify="Center", Color=Color3.fromHex("#ff3040"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Delete() then WI:Notify({Title="Deleted", Content="OK", Duration=3, Icon="solar:trash-bin-trash-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
+        t5:Button({Title="🗑️ 删除", Icon="solar:trash-bin-trash-bold", Justify="Center", Color=Color3.fromHex("#ff3040"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Delete() then WI:Notify({Title="已删除", Content="OK", Duration=3, Icon="solar:trash-bin-trash-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
         spawn(function() wait(1) pcall(function() CM:CreateConfig("default",true) end) end)
     end)
 
-    local t6=WN:Tab({Title="About", Icon="solar:info-square-bold"})
-    t6:Paragraph({Title="Arctic Survival v1.1"}); t6:Divider()
-    t6:Paragraph({Title="Author", Desc="b站英吉利超入_"})
-    t6:Paragraph({Title="Desc", Desc="Auto collect resources + dig snow"})
+    local t6=WN:Tab({Title="关于", Icon="solar:info-square-bold"})
+    t6:Paragraph({Title="北极生存 v1.2"}); t6:Divider()
+    t6:Paragraph({Title="作者", Desc="b站英吉利超入_"})
+    t6:Paragraph({Title="说明", Desc="自动收集物资 + 自动挖雪"})
     return sWood, sStone, sFood, sDrag
 end
 
 pcall(function() WI:SetTheme("Dark") end); S.ParticleColor=tc("Dark")
 local PP=false
-WI:Popup({Title="Arctic Survival v1.1", Content="Auto collect resources + dig snow", Buttons={{Title="Load", Callback=function() PP=true end, Variant="Primary"}, {Title="Cancel", Callback=function() return end}}})
+WI:Popup({Title="北极生存 v1.2", Content="自动收集物资 + 自动挖雪\n木头/石头/食物/可拖动物品", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"}, {Title="取消", Callback=function() return end}}})
 while not PP do wait(0.1) end
 
 spawn(function()
@@ -423,10 +406,10 @@ spawn(function()
         wait(0.3)
         local now=os.clock()
         if now-start>3 then start=now
-            if sWood then pcall(function() sWood:SetTitle("Trees: "..#gTrees()) end) end
-            if sStone then pcall(function() sStone:SetTitle("Rocks: "..#gStones()) end) end
-            if sFood then pcall(function() sFood:SetTitle("Food: "..#gFood()) end) end
-            if sDrag then pcall(function() sDrag:SetTitle("Draggable: "..#gDrag()) end) end
+            if sWood then pcall(function() sWood:SetTitle("树木: "..#gTrees()) end) end
+            if sStone then pcall(function() sStone:SetTitle("石头: "..#gStones()) end) end
+            if sFood then pcall(function() sFood:SetTitle("食物: "..#gFood()) end) end
+            if sDrag then pcall(function() sDrag:SetTitle("拖动物品: "..#gDrag()) end) end
         end
     end
 end)
