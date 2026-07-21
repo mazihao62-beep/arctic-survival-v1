@@ -155,7 +155,7 @@ local function cSnow()
         ByteNetReliable:FireServer(makeSnowBuffer(), nil)
     end)
     if ok then
-        print(string.format("[挖雪] %s @%.1fm", snow.P.Name, snow.D))
+        print("[挖雪] " .. snow.P.Name .. " @" .. string.format("%.1f", snow.D) .. "m")
         wait(0.5)
     end
 end
@@ -371,11 +371,11 @@ local function mW()
         local DV=nil; for _,v in ipairs(AC) do if v=="default" then DV="default"; break end end
         local ACD=t5:Dropdown({Title="已有配置", Values=AC, Value=DV, Callback=function(v) if v then pcall(function() cni:Set(v) end) end end})
         t5:Space()
-        t5:Button({Title="💾 保存", Icon="solar:check-circle-bold", Justify="Center", Color=Color3.fromHex("#305dff"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Save() then WI:Notify({Title="已保存", Content="OK", Duration=3, Icon="solar:check-circle-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
+        t5:Button({Title="保存", Icon="solar:check-circle-bold", Justify="Center", Color=Color3.fromHex("#305dff"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Save() then WI:Notify({Title="已保存", Content="OK", Duration=3, Icon="solar:check-circle-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
         t5:Space()
-        t5:Button({Title="📂 加载", Icon="solar:refresh-circle-bold", Justify="Center", Color=Color3.fromHex("#10C550"), Callback=function() if not CM then return end; local c=CM:CreateConfig("default",false); if c and c:Load() then WI:Notify({Title="已加载", Content="OK", Duration=3, Icon="solar:refresh-circle-bold"}) end end})
+        t5:Button({Title="加载", Icon="solar:refresh-circle-bold", Justify="Center", Color=Color3.fromHex("#10C550"), Callback=function() if not CM then return end; local c=CM:CreateConfig("default",false); if c and c:Load() then WI:Notify({Title="已加载", Content="OK", Duration=3, Icon="solar:refresh-circle-bold"}) end end})
         t5:Space()
-        t5:Button({Title="🗑️ 删除", Icon="solar:trash-bin-trash-bold", Justify="Center", Color=Color3.fromHex("#ff3040"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Delete() then WI:Notify({Title="已删除", Content="OK", Duration=3, Icon="solar:trash-bin-trash-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
+        t5:Button({Title="删除", Icon="solar:trash-bin-trash-bold", Justify="Center", Color=Color3.fromHex("#ff3040"), Callback=function() if not CM then return end; local c=CM:Config("default"); if c and c:Delete() then WI:Notify({Title="已删除", Content="OK", Duration=3, Icon="solar:trash-bin-trash-bold"}); pcall(function() ACD:Refresh(CM:AllConfigs()) end) end end})
         spawn(function() wait(1) pcall(function() CM:CreateConfig("default",true) end) end)
     end)
 
@@ -388,7 +388,7 @@ end
 
 pcall(function() WI:SetTheme("Dark") end); S.ParticleColor=tc("Dark")
 local PP=false
-WI:Popup({Title="北极生存 v1.2", Content="自动收集物资 + 自动挖雪\n木头/石头/食物/可拖动物品", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"}, {Title="取消", Callback=function() return end}}})
+WI:Popup({Title="北极生存 v1.2", Content="自动收集物资 + 自动挖雪。木头/石头/食物/可拖动物品。", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"}, {Title="取消", Callback=function() return end}}})
 while not PP do wait(0.1) end
 
 spawn(function()
