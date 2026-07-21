@@ -1,12 +1,11 @@
 --[[
-    北极生存7天 - 自动收集物资 v1.7
+    北极生存7天 - 自动收集物资 v1.8
     WindUI 模板 + 可勾选资源类型 + 自动挖雪 + 家点传送
     ByteNet 直连：挖雪 | 砍树
-    全中文界面
-    Github: https://github.com/mazihao62-beep/arctic-survival-v1
+    全中文界面（无emoji）
 --]]
 
-print("[北极] v1.7 加载中...")
+print("[北极] v1.8 加载中...")
 
 local P = game:GetService("Players")
 local WS = game:GetService("Workspace")
@@ -16,14 +15,13 @@ local C = game:GetService("CoreGui")
 local UIS = game:GetService("UserInputService")
 
 local LP = P.LocalPlayer
-if not LP then return end
+if not LP then print("[北极] 无LocalPlayer"); return end
 print("[北极] 玩家: " .. LP.Name)
 
 -- 清理旧Gui
 for _, g in ipairs(C:GetChildren()) do
     if g:IsA("ScreenGui") then
-        local n = g.Name
-        if n == "A" or n:find("Arctic") or n == "WindUI" then
+        if g.Name == "A" or g.Name:find("Arctic") or g.Name == "WindUI" then
             pcall(function() g:Destroy() end)
         end
     end
@@ -39,17 +37,15 @@ local Remotes = RS:FindFirstChild("Remotes")
 local RequestDrag = Remotes and Remotes:FindFirstChild("RequestDrag")
 local ReleaseDrag = Remotes and Remotes:FindFirstChild("ReleaseDrag")
 local ByteNetReliable = RS:FindFirstChild("ByteNetReliable")
-print("[北极] Remotes: " .. tostring(RequestDrag and "RequestDrag✅" or "RequestDrag❌") .. " " .. tostring(ReleaseDrag and "ReleaseDrag✅" or "ReleaseDrag❌"))
-print("[北极] ByteNet: " .. tostring(ByteNetReliable and "✅" or "❌"))
+print("[北极] RequestDrag=" .. tostring(RequestDrag and "OK" or "NIL"))
+print("[北极] ReleaseDrag=" .. tostring(ReleaseDrag and "OK" or "NIL"))
+print("[北极] ByteNet=" .. tostring(ByteNetReliable and "OK" or "NIL"))
 
 -- 检查 buffer 库
 local bufferOK = pcall(function() return buffer.create end)
-print("[北极] buffer库: " .. (bufferOK and "✅" or "❌"))
-if not bufferOK then
-    warn("[北极] 执行器不支持 buffer 库，ByteNet 功能无法使用")
-end
+print("[北极] buffer=" .. (bufferOK and "OK" or "NIL"))
 
--- Cobalt 挖雪 buffer (5字节)
+-- Cobalt 挖雪 buffer
 local snowBytes = {39, 108, 84, 138, 63}
 local function makeSnowBuffer()
     local b = buffer.create(#snowBytes)
@@ -59,7 +55,7 @@ local function makeSnowBuffer()
     return b
 end
 
--- Cobalt 砍树 buffer (42字节)
+-- Cobalt 砍树 buffer
 local treeBytes = {41, 3, 0, 65, 120, 101, 8, 0, 65, 120, 101, 83, 119, 105, 110, 103, 20, 1, 42, 197, 127, 191, 99, 221, 42, 61, 220, 52, 242, 59, 69, 171, 14, 68, 253, 170, 165, 66, 172, 8, 26, 68}
 local function makeTreeBuffer()
     local b = buffer.create(#treeBytes)
@@ -69,7 +65,6 @@ local function makeTreeBuffer()
     return b
 end
 
--- 家点和状态
 local homePos = nil
 local S = {
     AutoCollect = false, CollectWood = true, CollectStone = true,
@@ -126,13 +121,13 @@ local function getHRP()
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
--- ============ 挖雪 (使用 Auger + DigPoint) ============
+-- ============ 挖雪 ============
 local function doDigSnow()
     if not S.AutoSnow or not ByteNetReliable or not bufferOK then return end
 
     local auger = getTool({"auger", "drill"})
     if not auger then
-        print("[挖雪] ⚠️ 背包中未找到 Auger")
+        print("[挖雪] 无 Auger")
         return
     end
     equip(auger)
@@ -145,16 +140,16 @@ local function doDigSnow()
 
     local targetPos = digPoint and digPoint.Position or (digHere and digHere.Position)
     if not targetPos then
-        print("[挖雪] ⚠️ 未找到 DigPoint/DigHere")
+        print("[挖雪] 无 DigPoint/DigHere")
         return
     end
 
     local dist = (targetPos - h.Position).Magnitude
     if dist > S.AugerRange then
-        print(string.format("[挖雪] 挖掘点距离: %.1fm (超过范围 %dm)", dist, S.AugerRange))
+        print(string.format("[挖雪] 距离 %.1fm > %dm", dist, S.AugerRange))
         return
     end
-    print(string.format("[挖雪] 挖掘点距离: %.1fm", dist))
+    print(string.format("[挖雪] 距离 %.1fm", dist))
 
     h.CFrame = CFrame.lookAt(h.Position, targetPos)
     wait(0.2)
@@ -164,23 +159,23 @@ local function doDigSnow()
         ByteNetReliable:FireServer(buf, nil)
     end)
     if ok then
-        print("[挖雪] ✅ 挖雪成功")
+        print("[挖雪] OK")
     else
-        print("[挖雪] ❌ 失败: " .. tostring(err))
+        print("[挖雪] 失败: " .. tostring(err))
     end
     wait(0.5)
 end
 
--- ============ 砍树 (ByteNet + Forest Trunk) ============
+-- ============ 砍树 ============
 local function doCutTree()
     if not S.CollectWood or not ByteNetReliable or not bufferOK then return end
 
     local axe = getTool({"axe", "hatchet"})
-    if not axe then print("[砍树] ⚠️ 无斧头"); return end
+    if not axe then print("[砍树] 无斧头"); return end
     equip(axe)
 
     local forest = WS:FindFirstChild("Forest")
-    if not forest then print("[砍树] ⚠️ Forest 不存在"); return end
+    if not forest then print("[砍树] Forest 不存在"); return end
 
     local h = getHRP()
     if not h then return end
@@ -201,8 +196,8 @@ local function doCutTree()
         end
     end
 
-    if not nearest then print("[砍树] 范围内无树"); return end
-    print(string.format("[砍树] 目标: %s @%.1fm", nearest.M.Name, nearest.D))
+    if not nearest then print("[砍树] 无树"); return end
+    print(string.format("[砍树] %s @%.1fm", nearest.M.Name, nearest.D))
 
     h.CFrame = nearest.P.CFrame * CFrame.new(0, 0, 4)
     wait(0.3)
@@ -212,17 +207,14 @@ local function doCutTree()
         ByteNetReliable:FireServer(buf, {nearest.P})
     end)
     if ok then
-        print("[砍树] ✅ 砍树成功")
+        print("[砍树] OK")
         wait(0.8)
         if homePos then
             local h2 = getHRP()
-            if h2 then
-                h2.CFrame = CFrame.new(homePos)
-                wait(0.2)
-            end
+            if h2 then h2.CFrame = CFrame.new(homePos); wait(0.2) end
         end
     else
-        print("[砍树] ❌ 失败: " .. tostring(err))
+        print("[砍树] 失败: " .. tostring(err))
     end
 end
 
@@ -252,17 +244,17 @@ local function dragOneHome(item)
     local h = getHRP()
     if not h then return end
 
-    print("[拖动] 目标: " .. item.M.Name .. " @" .. string.format("%.1f", item.D) .. "m")
+    print("[拖动] " .. item.M.Name .. " @" .. string.format("%.1f", item.D) .. "m")
 
     h.CFrame = item.P.CFrame * CFrame.new(0, 0, 3)
     wait(0.4)
 
     local ok1, err1 = pcall(function() RequestDrag:FireServer(item.M) end)
     if not ok1 then
-        print("[拖动] ❌ RequestDrag 失败: " .. tostring(err1))
+        print("[拖动] RequestDrag 失败: " .. tostring(err1))
         return
     end
-    print("[拖动] ✅ 已抓起")
+    print("[拖动] 已抓起")
     wait(0.3)
 
     if homePos then
@@ -272,9 +264,9 @@ local function dragOneHome(item)
 
     local ok2, err2 = pcall(function() ReleaseDrag:FireServer() end)
     if ok2 then
-        print("[拖动] ✅ 已放下")
+        print("[拖动] 已放下")
     else
-        print("[拖动] ❌ ReleaseDrag 失败: " .. tostring(err2))
+        print("[拖动] ReleaseDrag 失败: " .. tostring(err2))
     end
 end
 
@@ -303,9 +295,9 @@ local function doMine()
         ByteNetReliable:FireServer(makeSnowBuffer(), nil)
     end)
     if ok then
-        print("[挖矿] ✅ 尝试挖掘")
+        print("[挖矿] OK")
     else
-        print("[挖矿] ❌ " .. tostring(err))
+        print("[挖矿] 失败: " .. tostring(err))
     end
     if homePos then
         local h2 = getHRP()
@@ -341,7 +333,7 @@ local function doFood()
     wait(0.2)
     if RequestDrag then
         pcall(function() RequestDrag:FireServer(food.M) end)
-        print("[食物] 拾取: " .. food.M.Name)
+        print("[食物] " .. food.M.Name)
     end
     if homePos then
         local h2 = getHRP()
@@ -389,10 +381,10 @@ local function setHome()
     end
     homePos = h.Position
     if CT.HomeBtn and type(CT.HomeBtn.SetTitle) == "function" then
-        CT.HomeBtn:SetTitle("🏠 家点已设(点击重设)")
+        CT.HomeBtn:SetTitle("[家] 已设(点此重设)")
     end
     WI:Notify({Title="家点已设置", Content="拿起物品后自动传送回家放下", Duration=3, Icon="solar:home-bold"})
-    print(string.format("[家点] 已设置: %.1f, %.1f, %.1f", homePos.X, homePos.Y, homePos.Z))
+    print(string.format("[家点] %.1f, %.1f, %.1f", homePos.X, homePos.Y, homePos.Z))
 end
 
 -- ============ UI ============
@@ -415,14 +407,14 @@ local function mW()
     local t1=WN:Tab({Title="主控面板", Icon="solar:slider-vertical-bold"})
     CT.AutoCollect=t1:Toggle({Flag="AutoCollect", Title="自动收集", Value=false, Callback=function(v) S.AutoCollect=v end})
     t1:Divider()
-    CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="❄️ 自动挖雪(Auger)", Value=false, Callback=function(v) S.AutoSnow=v end})
+    CT.AutoSnow=t1:Toggle({Flag="AutoSnow", Title="挖雪(Auger)", Value=false, Callback=function(v) S.AutoSnow=v end})
     t1:Space()
-    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="🪓 木头(ByteNet砍树)", Value=true, Callback=function(v) S.CollectWood=v end})
-    CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="⛏️ 石头(Shovel)", Value=true, Callback=function(v) S.CollectStone=v end})
-    CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="🫐 食物(浆果)", Value=false, Callback=function(v) S.CollectFood=v end})
-    CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="📦 拖动回家", Value=true, Callback=function(v) S.CollectDrag=v end})
+    CT.CollectWood=t1:Toggle({Flag="CollectWood", Title="木头(ByteNet砍树)", Value=true, Callback=function(v) S.CollectWood=v end})
+    CT.CollectStone=t1:Toggle({Flag="CollectStone", Title="石头(Shovel)", Value=true, Callback=function(v) S.CollectStone=v end})
+    CT.CollectFood=t1:Toggle({Flag="CollectFood", Title="食物(浆果)", Value=false, Callback=function(v) S.CollectFood=v end})
+    CT.CollectDrag=t1:Toggle({Flag="CollectDrag", Title="拖动回家", Value=true, Callback=function(v) S.CollectDrag=v end})
     t1:Divider()
-    CT.HomeBtn=t1:Button({Title="🏠 设置家点", Icon="solar:home-bold", Justify="Center", Color=Color3.fromHex("#50C878"), Callback=setHome})
+    CT.HomeBtn=t1:Button({Title="[家] 设置家点", Icon="solar:home-bold", Justify="Center", Color=Color3.fromHex("#50C878"), Callback=setHome})
     t1:Space()
     CT.Range=t1:Slider({Flag="Range", Title="收集范围", Step=5, Value={Min=10,Max=150,Default=50}, Width=200, IsTextbox=true, Callback=function(v) S.Range=v end})
 
@@ -467,7 +459,7 @@ local function mW()
     end)
 
     local t6=WN:Tab({Title="关于", Icon="solar:info-square-bold"})
-    t6:Paragraph({Title="北极生存 v1.7"}); t6:Divider()
+    t6:Paragraph({Title="北极生存 v1.8"}); t6:Divider()
     t6:Paragraph({Title="作者", Desc="b站英吉利超入_"})
     t6:Paragraph({Title="说明", Desc="Auger挖雪+ByteNet砍树+拖动回家+家点传送"})
     return sWood, sStone, sFood, sDrag
@@ -479,7 +471,7 @@ S.ParticleColor = tc("Dark")
 
 local PP = false
 WI:Popup({
-    Title="北极生存 v1.7",
+    Title="北极生存 v1.8",
     Content="Auger挖雪+ByteNet砍树+拖动回家",
     Buttons={
         {Title="加载", Callback=function() PP=true end, Variant="Primary"},
@@ -490,7 +482,7 @@ while not PP do wait(0.1) end
 
 spawn(function()
     local sWood, sStone, sFood, sDrag = mW()
-    print("[北极] v1.7 开始运行")
+    print("[北极] v1.8 开始运行")
     local start = os.clock()
     while true do
         if S.AutoSnow then pcall(doDigSnow) end
