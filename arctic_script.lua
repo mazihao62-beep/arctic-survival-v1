@@ -1,10 +1,11 @@
 --[[
-    北极生存7天 - 自动收集物资 v2.1
+    北极生存7天 - 自动收集物资 v2.2
     Auger挖雪(走到挖掘点) + ByteNet砍树 + 拖动回家
     每个功能单独循环，不抢工具
+    改进工具检测：打印所有已找到的工具名
 --]]
 
-print("[北极] v2.1 加载中...")
+print("[北极] v2.2 加载中...")
 
 local P = game:GetService("Players")
 local WS = game:GetService("Workspace")
@@ -64,13 +65,39 @@ local homePos, WN, CT = nil, nil, {}
 local S = {Snow=false, Wood=false, Drag=false, HomeP=nil, Range=60}
 local KB = {Toggle="RightShift"}
 
+-- 打印当前所有工具（调试用）
+local function debugTools()
+    local all = {}
+    local c = LP.Character
+    if c then
+        for _, t in ipairs(c:GetChildren()) do
+            if t:IsA("Tool") then table.insert(all, "[角色]"..t.Name) end
+        end
+    end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") then table.insert(all, "[背包]"..t.Name) end
+        end
+    end
+    if #all > 0 then
+        print("[调试] 当前工具: " .. table.concat(all, ", "))
+    else
+        print("[调试] 无工具")
+    end
+end
+
+spawn(function() wait(3); debugTools() end)
+
 local function getTool(kw)
     for _, src in ipairs({LP.Character, LP:FindFirstChild("Backpack")}) do
         if src then
             for _, t in ipairs(src:GetChildren()) do
                 if t:IsA("Tool") then
                     local ln = t.Name:lower()
-                    for _, k in ipairs(kw) do if ln:find(k,1,true) then return t end end
+                    for _, k in ipairs(kw) do
+                        if ln:find(k, 1, true) then return t end
+                    end
                 end
             end
         end
@@ -91,7 +118,11 @@ local function hrp() local c=LP.Character; return c and c:FindFirstChild("Humano
 local function digSnow()
     if not S.Snow or not BNR or not BM then return end
     local auger = getTool({"auger","drill"})
-    if not auger then print("[雪] 无Auger"); return end
+    if not auger then
+        print("[雪] 无Auger - 检查背包中工具名是否有 'Auger' 或 'drill'")
+        debugTools()
+        return
+    end
     eq(auger)
     local things = WS:FindFirstChild("Things")
     local digPoint = things and things:FindFirstChild("DigPoint")
@@ -101,8 +132,7 @@ local function digSnow()
     if not tp then print("[雪] 无挖掘点"); return end
     local dist = (tp - h.Position).Magnitude
     if dist > S.Range then print(string.format("[雪] %.1fm > %dm", dist, S.Range)); return end
-    print(string.format("[雪] 距离%.1fm 正在前往...", dist))
-    -- 走到挖掘点!
+    print(string.format("[雪] 距离%.1fm 走到挖掘点...", dist))
     h.CFrame = CFrame.new(tp.X, tp.Y + 1, tp.Z)
     wait(0.5)
     local ok, err = pcall(function() BNR:FireServer(mkSB(), nil) end)
@@ -114,7 +144,11 @@ end
 local function cutTree()
     if not S.Wood or not BNR or not BM then return end
     local axe = getTool({"axe","hatchet"})
-    if not axe then print("[树] 无斧头"); return end
+    if not axe then
+        print("[树] 无斧头 - 检查背包中工具名是否有 'Axe' 或 'hatchet'")
+        debugTools()
+        return
+    end
     eq(axe)
     local forest = WS:FindFirstChild("Forest")
     if not forest then print("[树] 无Forest"); return end
@@ -173,7 +207,7 @@ end
 -- ===== UI =====
 if WI then
     WN = WI:CreateWindow({
-        Title="北极生存 v2.1", Author="b站英吉利超入_", Icon="solar:snowflake-bold",
+        Title="北极生存 v2.2", Author="b站英吉利超入_", Icon="solar:snowflake-bold",
         Size=UDim2.fromOffset(750,520), ToggleKey=Enum.KeyCode.RightShift,
         Folder="arctic-script", Acrylic=true, Resizable=false,
         ScrollBarEnabled=true, HideSearchBar=true,
@@ -211,18 +245,18 @@ if WI then
     local t4=WN:Tab({Title="信息", Icon="solar:chart-bold"})
 
     local t5=WN:Tab({Title="关于", Icon="solar:info-square-bold"})
-    t5:Paragraph({Title="北极生存 v2.1"}); t5:Divider()
+    t5:Paragraph({Title="北极生存 v2.2"}); t5:Divider()
     t5:Paragraph({Title="作者", Desc="b站英吉利超入_"})
     t5:Paragraph({Title="说明", Desc="挖雪:走到DigPoint+Auger+ByteNet | 砍树:Axe+ByteNet+{Trunk} | 拖动:RequestDrag回家"})
 
     local PP=false
-    WI:Popup({Title="北极生存 v2.1", Content="走到挖掘点挖雪 | ByteNet砍树 | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
+    WI:Popup({Title="北极生存 v2.2", Content="走到挖掘点挖雪 | ByteNet砍树 | 拖动回家", Buttons={{Title="加载", Callback=function() PP=true end, Variant="Primary"},{Title="取消", Callback=function() return end}}})
     while not PP do wait(0.1) end
 else
     print("[北极] 无WindUI, 仅打印模式")
 end
 
-print("[北极] v2.1 开始运行")
+print("[北极] v2.2 开始运行")
 
 spawn(function()
     while true do
